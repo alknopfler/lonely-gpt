@@ -31,12 +31,14 @@ func convertAudioToText(audioFilePath, apiKey string) (string, error) {
 	}
 	writer.Close()
 
-	url := "https://api.openai.com/v1/engines/davinci-codex/completions"
+	url := "https://api.openai.com/v1/engines/davinci/completions"
+	fmt.Println("Doing request to: ", url)
 	req, err := http.NewRequest("POST", url, body)
 	if err != nil {
 		return "", fmt.Errorf("failed to create HTTP request: %s", err.Error())
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	fmt.Println(apiKey)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	client := &http.Client{}
@@ -53,6 +55,7 @@ func convertAudioToText(audioFilePath, apiKey string) (string, error) {
 	}
 
 	response := respBody.String()
+	fmt.Println(response)
 	startIndex := bytes.Index([]byte(response), []byte(`text":"`)) + len(`text":"`)
 	endIndex := bytes.Index([]byte(response[startIndex:]), []byte(`"`))
 	text := response[startIndex : startIndex+endIndex]

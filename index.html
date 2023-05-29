@@ -41,15 +41,15 @@
             var recording = false;
             var audioChunks = [];
             var audioBlob;
+            var mediaRecorder;
 
             function startRecording() {
-                console.log("Comenzando a grabar...");
                 recording = true;
                 audioChunks = [];
 
-                navigator.mediaDevices.getUserMedia({ audio: true })
+                return navigator.mediaDevices.getUserMedia({ audio: true })
                     .then(function(stream) {
-                        var mediaRecorder = new MediaRecorder(stream);
+                        mediaRecorder = new MediaRecorder(stream);
 
                         mediaRecorder.addEventListener("dataavailable", function(event) {
                             if (event.data.size > 0) {
@@ -66,37 +66,42 @@
 
             function stopRecording() {
                 recording = false;
-                console.log("Deteniendo la grabación...");
-                navigator.mediaDevices.getUserMedia({ audio: true })
-                    .then(function(stream) {
-                        var mediaRecorder = new MediaRecorder(stream);
 
-                        mediaRecorder.addEventListener("dataavailable", function(event) {
-                            if (event.data.size > 0) {
-                                audioChunks.push(event.data);
-                            }
-                        });
-
+                return new Promise(function(resolve, reject) {
+                    if (mediaRecorder && mediaRecorder.state === "recording") {
                         mediaRecorder.addEventListener("stop", function() {
                             audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                            uploadAudio();
+                            resolve();
                         });
 
                         mediaRecorder.stop();
-                    })
-                    .catch(function(error) {
-                        console.log("Error al acceder al micrófono: " + error);
-                    });
+                    } else {
+                        reject(new Error("No se está grabando actualmente."));
+                    }
+                });
             }
 
             function convertHandler() {
-                console.log("Convertir audio a texto...");
-                startRecording();
-                setTimeout(stopRecording, 3000); // Detener la grabación después de 3 segundos (ajustar según sea necesario)
+                startRecording()
+                    .then(function() {
+                        return new Promise(function(resolve) {
+                            setTimeout(function() {
+                                resolve();
+                            }, 3000); // Detener la grabación después de 3 segundos (ajustar según sea necesario)
+                        });
+                    })
+                    .then(function() {
+                        return stopRecording();
+                    })
+                    .then(function() {
+                        uploadAudio();
+                    })
+                    .catch(function(error) {
+                        console.log("Error en la conversión de audio: " + error);
+                    });
             }
 
             function uploadAudio() {
-                console.log("Subiendo audio...");
                 var formData = new FormData();
                 formData.append("audio", audioBlob);
 
@@ -117,16 +122,13 @@
             }
 
             function speakResponse(text) {
-                console.log("Hablando...");
                 var synth = window.speechSynthesis;
                 var utterance = new SpeechSynthesisUtterance(text);
                 synth.speak(utterance);
             }
 
             $("#record-button").on("mousedown", function() {
-                console.log("Botón de grabación presionado");
                 convertHandler();
-                return false;
             });
         });
     </script>
