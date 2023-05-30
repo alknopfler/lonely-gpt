@@ -1,13 +1,40 @@
 package main
 
 import (
-	"log"
-	"net/http"
+	"context"
+	"errors"
+	"fmt"
+	openai "github.com/sashabaranov/go-openai"
+	"os"
+)
+
+const (
+	sampleRate = 44100
+	seconds    = 1
 )
 
 func main() {
-	http.HandleFunc("/", homeHandler)
-	http.HandleFunc("/convert", convertHandler)
-	log.Println("Servidor iniciado en http://localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	if len(os.Args) < 2 {
+		fmt.Println("please provide a filename to convert to text")
+		return
+	}
+	if _, err := os.Stat(os.Args[1]); errors.Is(err, os.ErrNotExist) {
+		fmt.Printf("file %s does not exist\n", os.Args[1])
+		return
+	}
+
+	client := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
+	resp, err := client.CreateTranscription(
+		context.Background(),
+		openai.AudioRequest{
+			Model:    openai.Whisper1,
+			FilePath: os.Args[1],
+		},
+	)
+
+	if err != nil {
+		fmt.Printf("Transcription error: %v\n", err)
+		return
+	}
+	fmt.Println(resp.Text)
 }
