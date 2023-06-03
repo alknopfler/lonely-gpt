@@ -2,76 +2,65 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
-	"github.com/MarkKremer/microphone"
-	"github.com/faiface/beep/wav"
+	"github.com/gordonklaus/portaudio"
 	openai "github.com/sashabaranov/go-openai"
-	"log"
 	"os"
 	"os/signal"
-	"strings"
+	"time"
 )
 
 const (
 	sampleRate = 44100
-	seconds    = 1
+	seconds    = 2
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("missing required argument: output file name")
+		fmt.Println("missing required argument:  output file name")
 		return
 	}
-	fmt.Println("Recording. Press Ctrl-C to stop.")
+	fmt.Println("Recording.  Press Ctrl-C to stop.")
 
-	err := microphone.Init()
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer microphone.Terminate()
-
-	stream, format, err := microphone.OpenDefaultStream(sampleRate, seconds)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Close the stream at the end if it hasn't already been
-	// closed explicitly.
-	defer stream.Close()
-
-	filename := os.Args[1]
-	if !strings.HasSuffix(filename, ".wav") {
-		filename += ".wav"
-	}
-	f, err := os.Create(filename)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Stop the stream when the user tries to quit the program.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, os.Kill)
-	go func() {
-		<-sig
-		stream.Stop()
-		stream.Close()
+
+	fileName := os.Args[1]
+	f, err := os.Create(fileName)
+	chk(err)
+
+	defer func() {
+		chk(f.Close())
 	}()
 
-	stream.Start()
+	portaudio.Initialize()
+	time.Sleep(1)
+	defer portaudio.Terminate()
+	in := make([]int16, 64)
+	stream, err := portaudio.OpenDefaultStream(1, 0, 16000, len(in), in)
+	chk(err)
+	defer stream.Close()
 
-	// Encode the stream. This is a blocking operation because
-	// wav.Encode will try to drain the stream. However, this
-	// doesn't happen until stream.Close() is called.
-	err = wav.Encode(f, stream, format)
-	if err != nil {
-		log.Fatal(err)
+	chk(stream.Start())
+loop:
+	for {
+		chk(stream.Read())
+		chk(binary.Write(f, binary.LittleEndian, in))
+		select {
+		case <-sig:
+			break loop
+		default:
+		}
 	}
+	chk(stream.Stop())
 
 	client := openai.NewClient(os.Getenv("OPENAI_API_KEY"))
 	resp, err := client.CreateTranscription(
 		context.Background(),
 		openai.AudioRequest{
 			Model:    openai.Whisper1,
-			FilePath: filename + ".wav",
+			FilePath: fileName,
 		},
 	)
 
@@ -80,4 +69,10 @@ func main() {
 		return
 	}
 	fmt.Println(resp.Text)
+}
+
+func chk(err error) {
+	if err != nil {
+		panic(err)
+	}
 }
